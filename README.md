@@ -44,6 +44,16 @@ PostgreSQL is exposed on `${POSTGRES_PORT}` (default `5432`). Inspect the schema
 docker compose exec db psql -U todo -d todo -c '\d users' -c '\d tasks'
 ```
 
+## Tests
+
+```bash
+make test              # unit + handler tests, no database needed
+make test-integration  # full API flow against a dedicated todo_test database
+```
+
+`make test-integration` creates `todo_test` on first use and resets its schema on every run, so it
+never touches development data.
+
 Other targets: `make help`.
 
 ## Layout
