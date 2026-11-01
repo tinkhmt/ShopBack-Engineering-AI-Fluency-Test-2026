@@ -8,8 +8,9 @@ coverage/
 *.log
 .DS_Store
 
-# Installed agent skills are reproducible from skills-lock.json.
+# Agent skills and their lock file are local, not part of the delivered source.
 .agents/
+skills-lock.json
 
 backend/bin/
 frontend/.vite/
