@@ -3,7 +3,7 @@ COMPOSE := docker compose
 MIGRATE := $(COMPOSE) run --rm migrate
 TEST_DATABASE_URL ?= postgres://todo:todo_dev_password@localhost:5432/todo_test?sslmode=disable
 
-.PHONY: help db-up down db-reset migrate-up migrate-down migrate-version api test test-integration
+.PHONY: help db-up down db-reset migrate-up migrate-down migrate-version api test test-integration web
 
 help: ## list available targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -39,3 +39,6 @@ test-integration: db-up ## run the API integration suite against a dedicated tes
 		"SELECT 1 FROM pg_database WHERE datname = 'todo_test'" | grep -q 1 || \
 		$(COMPOSE) exec -T db createdb -U $${POSTGRES_USER:-todo} todo_test
 	cd backend && TEST_DATABASE_URL='$(TEST_DATABASE_URL)' go test -count=1 -v ./internal/integration/...
+
+web: ## run the frontend dev server on :5173 (proxies /api to :8080)
+	cd frontend && npm install --no-audit --no-fund && npm run dev

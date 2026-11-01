@@ -3,7 +3,7 @@
 Living document: updated after each completed task. Architecture and rationale live in
 [design.md](design.md); this file records **what exists, what was verified, and what changed**.
 
-Last updated: 2026-11-01 · Status: **Task 6 of 10 complete**
+Last updated: 2026-11-01 · Status: **Task 7 of 10 complete**
 
 ## Progress
 
@@ -15,8 +15,8 @@ Last updated: 2026-11-01 · Status: **Task 6 of 10 complete**
 | 4 | Hardening + token edge cases | ✅ Done |
 | 5 | Task module (CRUD, filter, ownership) | ✅ Done |
 | 6 | Backend integration test suite | ✅ Done |
-| 7 | Frontend foundation (Vite, types, API client) | ⬜ Next |
-| 8 | Auth UI | ⬜ Pending |
+| 7 | Frontend foundation (Vite, types, API client) | ✅ Done |
+| 8 | Auth UI | ⬜ Next |
 | 9 | Tasks UI | ⬜ Pending |
 | 10 | Frontend tests, Docker images, docs | ⬜ Pending |
 
@@ -407,6 +407,77 @@ unchanged → delete `204` then `404` → logout `204` then `/me` `401` → dire
 
 ---
 
+## Task 7 — Frontend foundation ✅
+
+### What exists
+
+| File | Purpose |
+|---|---|
+| `frontend/package.json` | React 19.3, Vite 7.3, TypeScript 5.9 (strict), Geist via `@fontsource-variable/geist` |
+| `frontend/tsconfig.json` | `strict`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `noEmit` |
+| `frontend/vite.config.ts` | `/api` → `http://localhost:8080` proxy, in `dev` and `preview` |
+| `frontend/index.html` | `lang`, `color-scheme`, `theme-color` matching the ground |
+| `frontend/src/main.tsx` | `createRoot` + `AuthProvider` |
+| `frontend/src/App.tsx` | shell that renders the real session state (screens replace it in Tasks 8–9) |
+| `frontend/src/types.ts` | `User`, `Task`, `TaskFilter`, request inputs, error envelope |
+| `frontend/src/api/client.ts` | `request<T>()` + `ApiError` (`status`, `code`, `fields`) |
+| `frontend/src/api/auth.ts` | `me`, `login`, `register`, `logout` |
+| `frontend/src/auth/AuthContext.tsx` | `loading \| authenticated \| anonymous`, actions, `clearSession` |
+| `frontend/src/styles.css` | dealt tokens, reset, shell, one motion moment |
+| `PRODUCT.md` | product truth (users, purpose, constraints, principles) |
+
+### Design direction
+
+Dealt with `design-taste-frontend` (`draw.mjs --app --kind workspace --screens home,list`), chosen from
+the two options: **achromatic-ledger**, light, sparse.
+
+- **Move:** no colour in the chrome. Primary action near-black; every figure in ink; one hue
+  (`#1d5fbf`) only as a small state signal.
+- **Face:** the stone ground (`#f4f3f1`) from the product's world — a shop's shelf, one step off white —
+  with white panels and the product's own object (a ticked box) as the mark.
+- **Type:** Geist, self-hosted through Fontsource (no CDN, so the Docker build stays offline). Sizes
+  12/14/16/24 px, one weight step (400/500).
+- **Radii:** 8 px cards, 6 px controls, per the sheet.
+- **Rejected:** `editorial-greeting` — a greeting-as-h1 home is the studied template, and a to-do list
+  is worked through rather than greeted.
+
+### Decisions
+
+- **No router yet.** `react-router-dom` arrives in Task 8 with the pages that use it; installing it now
+  would ship an unused dependency.
+- **One `request<T>()`, no client library and no react-query.** Three screens and a cookie session do
+  not justify either; `ApiError` carries the backend's `fields` so forms can render them verbatim.
+- **`401` is not handled globally.** `AuthContext` treats it as the normal signed-out case during
+  bootstrap; Task 9 will call `clearSession()` when a task call 401s.
+- **`credentials: 'same-origin'`** is explicit, and the proxy keeps the cookie first-party in dev and
+  preview — the same arrangement nginx provides in Task 10.
+- **Fonts are bundled, not fetched.** A CDN link would break the offline container build and add a
+  render-blocking third party.
+- **`preview` gets the same proxy as `dev`** so the production-build design gate runs against real
+  session state instead of a network error.
+
+### Verification
+
+```
+npm run typecheck   clean
+npm run build       built in 960ms; 225 kB JS (70 kB gzip), 4.4 kB CSS, Geist latin 29 kB
+
+curl localhost:5173/api/auth/me → 401 {"error":{"code":"unauthorized",…}}   (proxy → Go API)
+login through :5173 → 200, cookie stored; GET /api/auth/me → 200 alice@example.com
+logout → 204; GET /api/auth/me → 401                                        (cookie round-trip)
+
+lint.mjs --app frontend/src           0 FAIL, 0 WARN
+inspect.mjs --app (production build)  0 FAIL, 2 WARN
+impeccable detect (1280 and 390)      0 findings
+contrast                              muted/ground 4.81, muted/panel 5.33, text 17.85, signal 6.10
+```
+
+The two inspector warnings are the placeholder, not the layout: `hero-void` and `unused-canvas` measure
+the short centred column at 1440px. The centred 640 px column is the sheet's "personal home" canvas;
+the task list fills it in Task 9, which is when the gate must be re-run.
+
+---
+
 ## Review notes and deviations
 
 - **Rejected AI suggestion:** the `golang-gin-api` skill recommends `html.EscapeString` on inbound
@@ -431,6 +502,7 @@ make db-up && make migrate-up
 make api            # API on :8080
 make test           # backend tests
 make test-integration  # full API flow against a real todo_test database
+make web            # frontend dev server on :5173, proxies /api to :8080
 ```
 
 ## Change log
@@ -444,3 +516,4 @@ make test-integration  # full API flow against a real todo_test database
 | 2026-11-01 | Task 4: security headers, 64 KiB body cap, JSON-only bodies, token edge-case tests |
 | 2026-11-01 | Task 5: task CRUD, status filter, SQL-enforced ownership, 21 tests |
 | 2026-11-01 | Task 6: Postgres integration suite (two users, full flow, DB-level isolation), `make test-integration` |
+| 2026-11-01 | Task 7: frontend foundation — Vite/TS, typed API client, `AuthContext`, dealt design tokens (`achromatic-ledger`) |

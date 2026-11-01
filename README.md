@@ -54,6 +54,22 @@ make test-integration  # full API flow against a dedicated todo_test database
 `make test-integration` creates `todo_test` on first use and resets its schema on every run, so it
 never touches development data.
 
+## Frontend
+
+```bash
+make api            # terminal 1: the API on :8080
+make web            # terminal 2: installs on first run, serves :5173
+```
+
+Vite proxies `/api` to the API, so the browser only ever talks to one origin and the session cookie
+stays first-party — the same arrangement nginx provides in the container.
+
+```bash
+cd frontend
+npm run typecheck   # strict TypeScript, no emit
+npm run build       # typecheck + production bundle
+```
+
 Other targets: `make help`.
 
 ## Layout
@@ -74,8 +90,13 @@ backend/
     service/      business rules
     util/         bcrypt, JWT, context helpers
   migrations/     golang-migrate SQL migrations
+frontend/
+  src/api/        typed client + auth calls
+  src/auth/       AuthContext (session bootstrap, login, logout)
+  src/types.ts    wire types mirroring the Go DTOs
+  src/styles.css  design tokens, reset, shell
 docs/             design notes and AI-usage log
 ```
 
-`docker-compose.yml` defines PostgreSQL and a one-shot `migrate` service. The frontend service is
-added in a later task.
+`docker-compose.yml` defines PostgreSQL and a one-shot `migrate` service. The frontend container and
+the nginx proxy are added in the final task.

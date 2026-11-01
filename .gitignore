@@ -13,3 +13,6 @@ coverage/
 
 backend/bin/
 frontend/.vite/
+
+# Design-skill artifacts (screenshots, dealt direction) are local, not source.
+.taste-skill/
