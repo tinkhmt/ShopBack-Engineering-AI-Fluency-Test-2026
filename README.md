@@ -70,6 +70,8 @@ npm run typecheck   # strict TypeScript, no emit
 npm run build       # typecheck + production bundle
 ```
 
+Routes: `/login`, `/register`, and `/tasks` (protected — an anonymous visitor is sent to `/login`).
+
 Other targets: `make help`.
 
 ## Layout
@@ -93,8 +95,10 @@ backend/
 frontend/
   src/api/        typed client + auth calls
   src/auth/       AuthContext (session bootstrap, login, logout)
+  src/components/ AuthForm, AppHeader, ProtectedRoute, SessionGate
+  src/pages/      Login, Register, TasksPage
   src/types.ts    wire types mirroring the Go DTOs
-  src/styles.css  design tokens, reset, shell
+  src/styles.css  design tokens, reset, screens
 docs/             design notes and AI-usage log
 ```
 

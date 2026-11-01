@@ -3,7 +3,7 @@
 Living document: updated after each completed task. Architecture and rationale live in
 [design.md](design.md); this file records **what exists, what was verified, and what changed**.
 
-Last updated: 2026-11-01 · Status: **Task 7 of 10 complete**
+Last updated: 2026-11-01 · Status: **Task 8 of 10 complete**
 
 ## Progress
 
@@ -16,8 +16,8 @@ Last updated: 2026-11-01 · Status: **Task 7 of 10 complete**
 | 5 | Task module (CRUD, filter, ownership) | ✅ Done |
 | 6 | Backend integration test suite | ✅ Done |
 | 7 | Frontend foundation (Vite, types, API client) | ✅ Done |
-| 8 | Auth UI | ⬜ Next |
-| 9 | Tasks UI | ⬜ Pending |
+| 8 | Auth UI | ✅ Done |
+| 9 | Tasks UI | ⬜ Next |
 | 10 | Frontend tests, Docker images, docs | ⬜ Pending |
 
 ## Environment
@@ -478,6 +478,84 @@ the task list fills it in Task 9, which is when the gate must be re-run.
 
 ---
 
+## Task 8 — Auth UI ✅
+
+### What exists
+
+| File | Purpose |
+|---|---|
+| `frontend/src/App.tsx` | route table: `/login`, `/register`, protected `/tasks`, `*` → `/tasks` |
+| `frontend/src/main.tsx` | `BrowserRouter` around `AuthProvider` |
+| `frontend/src/components/ProtectedRoute.tsx` | `loading` → gate, `anonymous` → `/login`, else `<Outlet/>` |
+| `frontend/src/components/SessionGate.tsx` | “Checking your session…” while `/api/auth/me` is in flight |
+| `frontend/src/components/AuthForm.tsx` | shared form: fields, request, server field errors, focus, pending label |
+| `frontend/src/components/AppHeader.tsx` | wordmark + signed-in email + Sign out; reused by Task 9 |
+| `frontend/src/pages/Login.tsx`, `Register.tsx` | card, heading, link to the other screen; signed-in users bounce to `/tasks` |
+| `frontend/src/pages/TasksPage.tsx` | placeholder list screen (Task 9 replaces the body) |
+| `frontend/src/styles.css` | header, auth card, fields, errors, button, gate; `--border-strong`, `--negative`, `--negative-bg`, `--accent-hover`, `--measure-form` |
+| `frontend/package.json` | `react-router-dom` 7.18 — the only new dependency |
+
+### Decisions
+
+- **One protected route, so no `state.from` dance.** Anonymous users always land on `/login`; both auth
+  pages redirect an authenticated user to `/tasks`. A “return to where you were” round trip buys nothing
+  with a single protected page.
+- **No flash of the wrong screen.** `loading` renders the gate, not a redirect, so a valid cookie never
+  shows the login form for a frame.
+- **Native validation stays on, the server stays authoritative.** `required`, `type="email"` and
+  `minLength={8}` on register give instant feedback; the backend's `fields` still render inline, because
+  the service normalises and validates more than the browser does.
+- **Server copy is shown verbatim.** The backend already writes user-facing messages, so the UI never
+  invents a second vocabulary. A `409 email_taken` carries no `fields`; the form attaches its message to
+  the email input, which is the only thing the user can change.
+- **Focus moves to the first invalid field**, and `aria-invalid` / `aria-describedby` tie the message to
+  it. Form-level failures (wrong password, network) use `role="alert"`.
+- **Sign out is local-first.** `logout()` clears context state even if the request fails, so the guard
+  redirects to `/login` without a second navigation call.
+- **No confirm-password field, no reveal toggle, no “remember me”.** None are in the brief; the backend
+  has no such concepts, and the session cookie is already 30 minutes.
+
+### Design
+
+Same dealt sheet (`achromatic-ledger`), no redraw: stone ground, one white 400 px card, ink labels,
+near-black primary button, one hue reserved for focus and the session signal.
+
+One token added for a measured reason: `--border-strong` (`#8a8a8a`, **3.45:1** on white) for form
+boundaries, because the sheet's decorative `--border` is 1.26:1 and fails the 3:1 non-text contrast that
+an input outline needs. Errors use `--negative` (`#b42318`, 6.57:1 on the card, 6.08:1 on its own tint).
+
+### Verification
+
+Real browser, driven over CDP (throwaway script in `/tmp`, no new dependency) against the dev server:
+
+```
+20/20 checks passed
+anonymous /tasks            → /login
+wrong password              → stays on /login, "invalid email or password" at form level
+register (fresh email)      → /tasks, email in the header
+reload                      → still /tasks (HttpOnly cookie survives)
+signed-in /login            → /tasks
+Sign out                    → /login, and /tasks is protected again
+duplicate email             → inline on #email, aria-invalid, focus on #email
+short password              → inline on #password, hint + error in aria-describedby
+correct login               → /tasks
+no page exceptions
+
+npm run typecheck           clean
+npm run build               268 kB JS (85 kB gzip), 6.9 kB CSS
+lint.mjs --app frontend/src 0 FAIL, 0 WARN
+inspect.mjs --app (build)   /login and /register: 0 FAIL, 1 WARN (hero-void)
+impeccable detect           /login and /register, 1280 and 390: 0 findings
+contrast                    border 3.45 · error 6.57/6.08 · muted 5.33/4.81 · text 19.80 · focus 6.10
+```
+
+The remaining warning is `hero-void`: at 1440 px a centred 400 px card leaves equal empty margins. That
+is the deliberate composition for a single-action screen — the sheet's own arrangement — not an unfilled
+layout. `/tasks` is inspected in Task 9, when it carries a real screen; today it is a placeholder and
+needs a session to be seen at all.
+
+---
+
 ## Review notes and deviations
 
 - **Rejected AI suggestion:** the `golang-gin-api` skill recommends `html.EscapeString` on inbound
@@ -517,3 +595,4 @@ make web            # frontend dev server on :5173, proxies /api to :8080
 | 2026-11-01 | Task 5: task CRUD, status filter, SQL-enforced ownership, 21 tests |
 | 2026-11-01 | Task 6: Postgres integration suite (two users, full flow, DB-level isolation), `make test-integration` |
 | 2026-11-01 | Task 7: frontend foundation — Vite/TS, typed API client, `AuthContext`, dealt design tokens (`achromatic-ledger`) |
+| 2026-11-01 | Task 8: auth UI — routes, `ProtectedRoute`, login/register forms with server field errors, sign-out header |

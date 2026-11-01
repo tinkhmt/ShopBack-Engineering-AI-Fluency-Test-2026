@@ -154,7 +154,7 @@ All bodies are JSON. Errors: `{"error":{"code","message","fields"?}}`.
 | 5 | Task module | `internal/{model,repository,service,handler,dto}` task files + tests | CRUD, filter, cross-user `404`, validation `400` |
 | 6 | Integration suite | `internal/integration/api_test.go`, `make test-integration` | two users, full flow, isolation proven against real Postgres |
 | 7 | Frontend foundation | `package.json`, `tsconfig*`, `vite.config.ts`, `src/{main,App,types,styles}`, `src/api/*`, `src/auth/AuthContext.tsx` | `npm run dev`, typed client compiles under `tsc --noEmit` |
-| 8 | Auth UI | `pages/{Login,Register}`, `components/ProtectedRoute.tsx` | register → tasks, refresh keeps session, logout → login, direct `/tasks` redirects |
+| 8 | Auth UI | `src/App.tsx`, `src/main.tsx`, `pages/{Login,Register,TasksPage}`, `components/{AuthForm,AppHeader,ProtectedRoute,SessionGate}.tsx` | register → tasks, refresh keeps session, logout → login, direct `/tasks` redirects |
 | 9 | Tasks UI | `pages/TasksPage.tsx`, `components/{TaskForm,TaskItem,FilterTabs}`, `api/tasks.ts` | CRUD, toggle, filters, loading/empty/error states |
 | 10 | Tests, images, docs | Vitest setup + frontend tests, both `Dockerfile`s, `nginx.conf`, full compose, `README.md`, `docs/AI_USAGE.md` | `docker compose up --build` fresh run; `make test` |
 
