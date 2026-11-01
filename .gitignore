@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Installed agent skills are reproducible from skills-lock.json.
+.agents/
+
+backend/bin/
+frontend/.vite/
