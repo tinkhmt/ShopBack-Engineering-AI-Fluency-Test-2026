@@ -3,7 +3,7 @@
 Living document: updated after each completed task. Architecture and rationale live in
 [design.md](design.md); this file records **what exists, what was verified, and what changed**.
 
-Last updated: 2026-11-01 · Status: **Task 4 of 10 complete**
+Last updated: 2026-11-01 · Status: **Task 5 of 10 complete**
 
 ## Progress
 
@@ -13,8 +13,8 @@ Last updated: 2026-11-01 · Status: **Task 4 of 10 complete**
 | 2 | Backend foundation (config, DB, router, errors) | ✅ Done |
 | 3 | Auth module (register / login / logout / me) | ✅ Done |
 | 4 | Hardening + token edge cases | ✅ Done |
-| 5 | Task module (CRUD, filter, ownership) | ⬜ Next |
-| 6 | Backend integration test suite | ⬜ Pending |
+| 5 | Task module (CRUD, filter, ownership) | ✅ Done |
+| 6 | Backend integration test suite | ⬜ Next |
 | 7 | Frontend foundation (Vite, types, API client) | ⬜ Pending |
 | 8 | Auth UI | ⬜ Pending |
 | 9 | Tasks UI | ⬜ Pending |
@@ -296,6 +296,67 @@ POST /api/auth/logout                     204
 
 ---
 
+## Task 5 — Task module ✅
+
+### What exists
+
+| File | Purpose |
+|---|---|
+| `internal/model/task.go` | `Task` domain struct |
+| `internal/dto/task.go` | create/update requests, `{task}` and `{tasks}` envelopes |
+| `internal/repository/task_repository.go` | `TaskRepository` + pgx implementation; `ErrTaskNotFound` |
+| `internal/service/task_service.go` | validation, status parsing, 404 translation |
+| `internal/handler/task_handler.go` | 4 handlers + `parseTaskID` |
+| `internal/handler/router.go` | `Deps` struct; `/api/tasks` behind `RequireSession` |
+| `internal/service/task_service_test.go` | 11 tests |
+| `internal/handler/task_handler_test.go` | 10 tests |
+
+### Endpoints
+
+| Method | Path | Success | Failures |
+|---|---|---|---|
+| GET | `/api/tasks?status=all\|active\|completed` | `200 {"tasks":[...]}` newest first | `400` bad status, `401` |
+| POST | `/api/tasks` | `201 {"task":{...}}` | `400` validation, `401` |
+| PATCH | `/api/tasks/:id` | `200 {"task":{...}}` | `400` empty patch/invalid id, `401`, `404` |
+| DELETE | `/api/tasks/:id` | `204` | `400` invalid id, `401`, `404` |
+
+### Decisions
+
+- **`handler.Deps` struct** replaces positional router arguments now that two modules exist; two
+  same-typed `*Handler` parameters would be silently swappable.
+- **Ownership is a SQL predicate**, not a lookup: every query carries `WHERE user_id = $1`, and
+  `pgx.ErrNoRows` / `RowsAffected() == 0` → `404`. A foreign task and a missing task are identical.
+- **PATCH uses pointers** (`*string`, `*bool`) so `{"completed":false}` differs from "absent".
+  `UPDATE … SET title = COALESCE($3, title)` leaves untouched columns alone; `description:""` clears.
+- **Empty patch → `400 validation_failed`** with `fields.body`; the DB is never touched.
+- **Rune counts** (`utf8.RuneCountInString`) match Postgres `char_length` and the `CHECK` constraints.
+- **`updated_at = now()` in SQL**, one clock, so `createdAt`/`updatedAt` cannot drift.
+- **Empty list serialises as `[]`**, never `null`, so the frontend can map without a guard.
+- **Status filter** parsed in the service: `""`/`all` → no filter, `active`/`completed` → `*bool`,
+  anything else → `400 fields.status`.
+
+### Verification
+
+```
+go vet ./...    clean
+go test ./...   65 tests pass
+
+alice: POST /api/tasks               201, title trimmed, completed=false
+alice: GET  /api/tasks               200, newest first
+alice: PATCH completed=true          200, updatedAt advanced
+alice: status=active|completed       1 task each; status=archived → 400
+alice: POST blank title              400 fields.title
+alice: PATCH {}                      400 fields.body
+alice: DELETE /api/tasks/abc         400 invalid_id
+bob:   GET   /api/tasks              200 {"tasks":[]}
+bob:   PATCH/DELETE alice's task     404 (task untouched)
+none:  GET   /api/tasks              401
+alice: DELETE own task               204, then 404
+psql:  tasks scoped by user_id, only the expected row remains
+```
+
+---
+
 ## Review notes and deviations
 
 - **Rejected AI suggestion:** the `golang-gin-api` skill recommends `html.EscapeString` on inbound
@@ -330,3 +391,4 @@ make test           # backend tests
 | 2026-11-01 | Task 3: auth module, 30-minute JWT cookie, session middleware, tests |
 | 2026-11-01 | Refactor: layer-first layout (`dto`, `errors`, `handler`, `logger`, `model`, `repository`, `service`, `util`), `cmd/server`, composition root |
 | 2026-11-01 | Task 4: security headers, 64 KiB body cap, JSON-only bodies, token edge-case tests |
+| 2026-11-01 | Task 5: task CRUD, status filter, SQL-enforced ownership, 21 tests |

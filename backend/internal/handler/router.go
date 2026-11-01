@@ -18,9 +18,17 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// Deps are the already-built handlers and shared services the router mounts.
+type Deps struct {
+	DB     Pinger
+	Auth   *AuthHandler
+	Tasks  *TaskHandler
+	Tokens *util.TokenManager
+}
+
 // NewRouter assembles the HTTP surface. It receives already-built handlers, so
 // wiring stays in cmd/server/main.go.
-func NewRouter(cfg *config.Config, db Pinger, authHandler *AuthHandler, tokens *util.TokenManager) *gin.Engine {
+func NewRouter(cfg *config.Config, deps Deps) *gin.Engine {
 	// Release mode suppresses Gin's route dump; the structured logger already
 	// reports every request.
 	if cfg.Env == "test" {
@@ -37,13 +45,19 @@ func NewRouter(cfg *config.Config, db Pinger, authHandler *AuthHandler, tokens *
 	r.Use(middleware.Recovery(), middleware.Logger(), middleware.Security(cfg.CookieSecure),
 		middleware.BodyLimit(), middleware.RequireJSON())
 
-	r.GET("/healthz", health(db))
+	r.GET("/healthz", health(deps.DB))
 
 	authRoutes := r.Group("/api/auth")
-	authRoutes.POST("/register", authHandler.Register)
-	authRoutes.POST("/login", authHandler.Login)
-	authRoutes.POST("/logout", authHandler.Logout)
-	authRoutes.GET("/me", middleware.RequireSession(tokens), authHandler.Me)
+	authRoutes.POST("/register", deps.Auth.Register)
+	authRoutes.POST("/login", deps.Auth.Login)
+	authRoutes.POST("/logout", deps.Auth.Logout)
+	authRoutes.GET("/me", middleware.RequireSession(deps.Tokens), deps.Auth.Me)
+
+	taskRoutes := r.Group("/api/tasks", middleware.RequireSession(deps.Tokens))
+	taskRoutes.GET("", deps.Tasks.List)
+	taskRoutes.POST("", deps.Tasks.Create)
+	taskRoutes.PATCH("/:id", deps.Tasks.Update)
+	taskRoutes.DELETE("/:id", deps.Tasks.Delete)
 
 	r.HandleMethodNotAllowed = true
 	r.NoRoute(func(c *gin.Context) {

@@ -61,10 +61,22 @@ func (m *memoryRepository) FindByID(_ context.Context, id int64) (*model.User, e
 }
 
 func newTestRouter(db handler.Pinger) *gin.Engine {
+	return buildRouter(&config.Config{Env: "test", JWTTTL: time.Minute}, db, newMemoryTaskRepository())
+}
+
+// buildRouter lets tests swap the task repository or the config without
+// duplicating the wiring.
+func buildRouter(cfg *config.Config, db handler.Pinger, tasks repository.TaskRepository) *gin.Engine {
 	tokens := util.NewTokenManager(strings.Repeat("s", 32), time.Minute)
-	svc := service.NewAuthService(newMemoryRepository(), tokens)
-	authHandler := handler.NewAuthHandler(svc, false, time.Minute)
-	return handler.NewRouter(&config.Config{Env: "test", JWTTTL: time.Minute}, db, authHandler, tokens)
+	authService := service.NewAuthService(newMemoryRepository(), tokens)
+	authHandler := handler.NewAuthHandler(authService, cfg.CookieSecure, time.Minute)
+	taskHandler := handler.NewTaskHandler(service.NewTaskService(tasks))
+	return handler.NewRouter(cfg, handler.Deps{
+		DB:     db,
+		Auth:   authHandler,
+		Tasks:  taskHandler,
+		Tokens: tokens,
+	})
 }
 
 type errorEnvelope struct {
@@ -125,8 +137,13 @@ func sessionCookie(w *httptest.ResponseRecorder) *http.Cookie {
 
 func registerUser(t *testing.T, r *gin.Engine) *http.Cookie {
 	t.Helper()
+	return registerEmail(t, r, "alice@example.com")
+}
+
+func registerEmail(t *testing.T, r *gin.Engine, email string) *http.Cookie {
+	t.Helper()
 	w := perform(r, http.MethodPost, "/api/auth/register",
-		`{"email":"alice@example.com","password":"password123"}`, nil)
+		`{"email":"`+email+`","password":"password123"}`, nil)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("register status = %d, body %s", w.Code, w.Body.String())
 	}
