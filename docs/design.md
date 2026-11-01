@@ -18,7 +18,7 @@ Scope: small take-home. Optimised for clarity and reviewability, not production 
 | 8 | Ownership | All task queries are scoped by `user_id`; foreign task → `404` |
 
 ### Non-functional
-- Backend: modular monolith, one package per module (`auth`, `task`), layers `handler → service → repository`.
+- Backend: modular monolith, layer-first packages (`handler → service → repository`) under `internal/`.
 - Consistent JSON error envelope, backend-only validation of every input.
 - Config exclusively from environment variables; app fails fast on missing/weak secrets.
 - Frontend: strict TypeScript, no `any` in application code, typed API boundary.
@@ -34,14 +34,15 @@ Browser ──HTTP──> nginx (SPA + /api proxy) ──> Gin router
                                                    │
                                     middleware: recover, request log, auth
                                                    │
-                        ┌──────────────────────────┴──────────────┐
-                     auth module                              task module
-                handler → service → repo                handler → service → repo
-                        └──────────────────────────┬──────────────┘
-                                              pgxpool
+                                     handler → service → repository
+                                                   │
+                                               pgxpool
                                                    │
                                               PostgreSQL
 ```
+
+Auth and tasks share the same layer packages; each handler/service/repository pair is a separate
+type, so features stay isolated without per-feature directories.
 
 **Same-origin by design.** In dev, Vite proxies `/api` → `:8080`; in the container, nginx does the same. The browser therefore never makes a cross-origin request: no CORS middleware, no wildcard, no preflight surface. Cookies are `SameSite=Lax`, `HttpOnly`, `Secure` when `COOKIE_SECURE=true`.
 
@@ -56,15 +57,19 @@ Browser ──HTTP──> nginx (SPA + /api proxy) ──> Gin router
 │   ├── design.md               # this file
 │   └── AI_USAGE.md             # what AI wrote, what I verified (Task 10)
 ├── backend/
-│   ├── cmd/api/main.go         # wiring + graceful shutdown
+│   ├── cmd/server/main.go      # composition root + graceful shutdown
 │   ├── internal/
 │   │   ├── config/             # env parsing, fail-fast
 │   │   ├── database/           # pgxpool
-│   │   ├── httpx/              # JSON envelope, typed app errors, validation errors
-│   │   ├── middleware/         # auth, security headers, request logging
-│   │   ├── server/             # router assembly
-│   │   ├── auth/               # model, repository, service, token, handler
-│   │   └── task/               # model, repository, service, handler
+│   │   ├── dto/                # request/response payloads
+│   │   ├── errors/             # AppError + single JSON writer
+│   │   ├── handler/            # HTTP handlers + router assembly
+│   │   ├── logger/             # slog setup
+│   │   ├── middleware/         # session auth, request logging, panic recovery
+│   │   ├── model/              # domain structs
+│   │   ├── repository/         # pgx implementations
+│   │   ├── service/            # business rules
+│   │   └── util/               # bcrypt, JWT, context helpers
 │   ├── migrations/             # 000001_init.up.sql / .down.sql
 │   └── Dockerfile
 └── frontend/
@@ -127,24 +132,27 @@ All bodies are JSON. Errors: `{"error":{"code","message","fields"?}}`.
 | CSRF | `SameSite=Lax` + mutations are non-GET + JSON-only bodies + same-origin proxy |
 | IDOR | Every read/write has `user_id = $1`; foreign resource returns `404`, not `403` (no existence leak) |
 | SQL injection | pgx parameterised queries only; no string-built SQL |
-| Input abuse | Email format/length, title 1–255 runes after trim, description ≤2000 runes, `status` enum, request body size cap |
+| Input abuse | Email format/length, title 1–255 runes after trim, description ≤2000 runes, `status` enum |
+| Request body | 64 KiB cap (`http.MaxBytesReader`) → `413 payload_too_large` |
+| Content type | Non-GET bodies must be `application/json` → `415 unsupported_media_type`; blocks cross-site form posts |
+| Response headers | `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, CSP `default-src 'none'`, `Cache-Control: no-store`; HSTS when `COOKIE_SECURE=true` |
 | Error leakage | Internal errors logged with `slog`, client gets a generic `500`; DB errors never serialised |
 | Log hygiene | Passwords, hashes and tokens never logged |
 | Race on register | DB unique index is the source of truth; map pgx `23505` → `409` |
 | ID parsing | Non-numeric `:id` → `400`; valid-but-missing → `404` |
 | Expired session mid-use | Frontend maps `401` → clear auth state → redirect to login |
-| Logout semantics | Stateless JWT: logout clears the cookie, token stays valid until `exp` (24 h). Documented trade-off; `token_version` column is the upgrade path |
+| Logout semantics | Stateless JWT: logout clears the cookie, token stays valid until `exp` (30 min). Documented trade-off; `token_version` column is the upgrade path |
 
 ## 4. Delivery tasks (one at a time, each independently runnable)
 
 | # | Task | Files | Verification |
 |---|---|---|---|
 | 1 | Skeleton + DB | `.gitignore`, `.env.example`, `docker-compose.yml` (db, migrate), `Makefile`, `backend/migrations/*`, README stub | `make db-up migrate-up`, inspect `\d users`, `\d tasks`; down/up round-trip |
-| 2 | Backend foundation | `go.mod`, `cmd/api/main.go`, `internal/{config,database,httpx,server,middleware/requestlog}` | `/healthz` 200, unknown route → JSON 404, missing `JWT_SECRET` → fail fast |
-| 3 | Auth module | `internal/auth/*` + unit tests | register/login/me/logout via curl; `go test ./internal/auth/...` |
-| 4 | Auth middleware + hardening | `internal/middleware/{auth,security}.go`, server wiring, tests | no cookie → 401, tampered/expired/`alg=none` token → 401, security headers present |
-| 5 | Task module | `internal/task/*` + tests | CRUD, filter, cross-user `404`, validation `400` |
-| 6 | Integration suite | `internal/server/server_test.go`, `make test-integration` | two users, full flow, isolation proven against real Postgres |
+| 2 | Backend foundation | `go.mod`, `cmd/server/main.go`, `internal/{config,database,errors,logger,handler,middleware}` | `/healthz` 200, unknown route → JSON 404, missing `JWT_SECRET` → fail fast |
+| 3 | Auth module + session middleware | `internal/{model,repository,service,handler,dto,util,middleware}`, tests | register/login/me/logout via curl; `go test ./internal/service/... ./internal/handler/...` |
+| 4 | Hardening + token edge cases | `internal/middleware/security.go`, body-size cap, handler tests | `alg=none`/tampered/expired → 401, security headers present |
+| 5 | Task module | `internal/{model,repository,service,handler,dto}` task files + tests | CRUD, filter, cross-user `404`, validation `400` |
+| 6 | Integration suite | `internal/handler/router_test.go`, `make test-integration` | two users, full flow, isolation proven against real Postgres |
 | 7 | Frontend foundation | `package.json`, `tsconfig*`, `vite.config.ts`, `src/{main,App,types,styles}`, `src/api/*`, `src/auth/AuthContext.tsx` | `npm run dev`, typed client compiles under `tsc --noEmit` |
 | 8 | Auth UI | `pages/{Login,Register}`, `components/ProtectedRoute.tsx` | register → tasks, refresh keeps session, logout → login, direct `/tasks` redirects |
 | 9 | Tasks UI | `pages/TasksPage.tsx`, `components/{TaskForm,TaskItem,FilterTabs}`, `api/tasks.ts` | CRUD, toggle, filters, loading/empty/error states |
@@ -158,4 +166,7 @@ Skills in use: `golang-testing`, `golang-security`, `auth-implementation-pattern
 2. **No ORM** — hand-written SQL in repositories keeps pgx idiomatic and queries reviewable.
 3. **No migration code in the binary** — golang-migrate runs as a compose service, so the API container has no schema privileges.
 4. **No state library / react-query** — `AuthContext` + local state is enough for three screens.
+5. **30-minute access token, no refresh token** — a stolen cookie is useless after 30 minutes and the
+   implementation stays small. Users re-authenticate when it expires; refresh rotation is the upgrade
+   path if the brief ever requires longer sessions.
 5. **bcrypt over argon2** — stdlib-adjacent (`x/crypto`), no parameter tuning, expected by reviewers.

@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/tinkhmt/shopback-todo/backend/internal/httpx"
+	apperrors "github.com/tinkhmt/shopback-todo/backend/internal/errors"
 )
 
 // Recovery converts a panic into the same JSON error envelope as every other
@@ -20,6 +20,6 @@ func Recovery() gin.HandlerFunc {
 			"path", c.Request.URL.Path,
 			"stack", string(debug.Stack()),
 		)
-		httpx.Fail(c, httpx.Internal(fmt.Errorf("panic: %v", recovered)))
+		apperrors.Fail(c, apperrors.Internal(fmt.Errorf("panic: %v", recovered)))
 	})
 }

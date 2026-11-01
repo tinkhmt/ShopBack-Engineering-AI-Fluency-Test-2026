@@ -50,13 +50,19 @@ Other targets: `make help`.
 
 ```
 backend/
-  cmd/api/        entry point, wiring, graceful shutdown
+  cmd/server/     entry point (composition root), graceful shutdown
   internal/
     config/       environment parsing and validation
     database/     pgx connection pool
-    httpx/        JSON error envelope and typed application errors
-    middleware/   request logging, panic recovery
-    server/       router assembly
+    dto/          request/response payloads
+    errors/       typed application errors + JSON envelope
+    handler/      HTTP handlers and router assembly
+    logger/       slog setup
+    middleware/   session auth, request logging, panic recovery
+    model/        domain structs
+    repository/   pgx implementations
+    service/      business rules
+    util/         bcrypt, JWT, context helpers
   migrations/     golang-migrate SQL migrations
 docs/             design notes and AI-usage log
 ```

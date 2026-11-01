@@ -30,8 +30,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HTTPAddr != ":8080" {
 		t.Errorf("HTTPAddr = %q, want :8080", cfg.HTTPAddr)
 	}
-	if cfg.JWTTTL != 24*time.Hour {
-		t.Errorf("JWTTTL = %v, want 24h", cfg.JWTTTL)
+	if cfg.JWTTTL != 30*time.Minute {
+		t.Errorf("JWTTTL = %v, want 30m", cfg.JWTTTL)
 	}
 	if cfg.CookieSecure {
 		t.Error("CookieSecure = true, want false in development")

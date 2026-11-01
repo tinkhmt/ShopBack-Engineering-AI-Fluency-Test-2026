@@ -13,7 +13,11 @@ import (
 
 	"github.com/tinkhmt/shopback-todo/backend/internal/config"
 	"github.com/tinkhmt/shopback-todo/backend/internal/database"
-	"github.com/tinkhmt/shopback-todo/backend/internal/server"
+	"github.com/tinkhmt/shopback-todo/backend/internal/handler"
+	"github.com/tinkhmt/shopback-todo/backend/internal/logger"
+	"github.com/tinkhmt/shopback-todo/backend/internal/repository"
+	"github.com/tinkhmt/shopback-todo/backend/internal/service"
+	"github.com/tinkhmt/shopback-todo/backend/internal/util"
 )
 
 func main() {
@@ -31,7 +35,7 @@ func run() error {
 		return err
 	}
 
-	slog.SetDefault(slog.New(newLogHandler(cfg)))
+	slog.SetDefault(logger.New(cfg))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -42,9 +46,15 @@ func run() error {
 	}
 	defer pool.Close()
 
+	// Composition root: every layer receives its dependencies explicitly.
+	userRepository := repository.NewUserRepository(pool)
+	tokenManager := util.NewTokenManager(cfg.JWTSecret, cfg.JWTTTL)
+	authService := service.NewAuthService(userRepository, tokenManager)
+	authHandler := handler.NewAuthHandler(authService, cfg.CookieSecure, cfg.JWTTTL)
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.New(cfg, pool),
+		Handler:           handler.NewRouter(cfg, pool, authHandler, tokenManager),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -76,11 +86,4 @@ func run() error {
 
 	slog.Info("server stopped")
 	return nil
-}
-
-func newLogHandler(cfg *config.Config) slog.Handler {
-	if cfg.IsProduction() {
-		return slog.NewJSONHandler(os.Stdout, nil)
-	}
-	return slog.NewTextHandler(os.Stdout, nil)
 }

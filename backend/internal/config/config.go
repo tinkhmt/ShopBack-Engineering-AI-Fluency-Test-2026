@@ -26,7 +26,7 @@ func Load() (*Config, error) {
 		HTTPAddr:    getenv("HTTP_ADDR", ":8080"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		JWTSecret:   os.Getenv("JWT_SECRET"),
-		JWTTTL:      24 * time.Hour,
+		JWTTTL:      30 * time.Minute,
 	}
 
 	var problems []string
@@ -41,7 +41,7 @@ func Load() (*Config, error) {
 	if raw := os.Getenv("JWT_TTL"); raw != "" {
 		ttl, err := time.ParseDuration(raw)
 		if err != nil || ttl <= 0 {
-			problems = append(problems, "JWT_TTL must be a positive duration such as 24h")
+			problems = append(problems, "JWT_TTL must be a positive duration such as 30m")
 		} else {
 			cfg.JWTTTL = ttl
 		}
