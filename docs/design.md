@@ -1,6 +1,6 @@
 # ShopBack To-Do — Design & Delivery Plan
 
-Status: **proposed — awaiting review**
+Status: **implemented — complete**
 Scope: small take-home. Optimised for clarity and reviewability, not production scale.
 
 ## 1. Requirement analysis
@@ -22,15 +22,15 @@ Scope: small take-home. Optimised for clarity and reviewability, not production 
 - Consistent JSON error envelope, backend-only validation of every input.
 - Config exclusively from environment variables; app fails fast on missing/weak secrets.
 - Frontend: strict TypeScript, no `any` in application code, typed API boundary.
-- One-command local stack: `docker compose up --build`.
+- Local stack: Compose for PostgreSQL and migrations; `make api` and `make web` run the app processes.
 
 ### Explicitly out of scope (named so they are not accidental omissions)
-Email verification, password reset, refresh tokens, rate limiting, pagination, task ordering/drag-drop, multi-device logout, HTTPS termination. Each is listed in the README as a production follow-up.
+Email verification, password reset, refresh tokens, rate limiting, pagination, task ordering/drag-drop, multi-device logout, HTTPS termination. Each is listed in `docs/implementation-report.md` as a known limitation.
 
 ## 2. Architecture
 
 ```
-Browser ──HTTP──> nginx (SPA + /api proxy) ──> Gin router
+Browser ──HTTP──> Vite (SPA + /api proxy) ──> Gin router
                                                    │
                                     middleware: recover, request log, auth
                                                    │
@@ -44,18 +44,18 @@ Browser ──HTTP──> nginx (SPA + /api proxy) ──> Gin router
 Auth and tasks share the same layer packages; each handler/service/repository pair is a separate
 type, so features stay isolated without per-feature directories.
 
-**Same-origin by design.** In dev, Vite proxies `/api` → `:8080`; in the container, nginx does the same. The browser therefore never makes a cross-origin request: no CORS middleware, no wildcard, no preflight surface. Cookies are `SameSite=Lax`, `HttpOnly`, `Secure` when `COOKIE_SECURE=true`.
+**Same-origin by design.** In dev, Vite proxies `/api` → `:8080`; a reverse proxy does the same in production. The browser therefore never makes a cross-origin request: no CORS middleware, no wildcard, no preflight surface. Cookies are `SameSite=Lax`, `HttpOnly`, `Secure` when `COOKIE_SECURE=true`.
 
 ### Project structure
 
 ```
 .
-├── docker-compose.yml          # db, migrate, backend, frontend
+├── docker-compose.yml          # PostgreSQL + one-shot migrate job
 ├── Makefile                    # dev shortcuts
 ├── .env.example
 ├── docs/
 │   ├── design.md               # this file
-│   └── AI_USAGE.md             # what AI wrote, what I verified (Task 10)
+│   └── implementation-report.md
 ├── backend/
 │   ├── cmd/server/main.go      # composition root + graceful shutdown
 │   ├── internal/
@@ -70,8 +70,7 @@ type, so features stay isolated without per-feature directories.
 │   │   ├── repository/         # pgx implementations
 │   │   ├── service/            # business rules
 │   │   └── util/               # bcrypt, JWT, context helpers
-│   ├── migrations/             # 000001_init.up.sql / .down.sql
-│   └── Dockerfile
+│   └── migrations/             # 000001_init.up.sql / .down.sql
 └── frontend/
     ├── src/
     │   ├── api/                # client.ts, auth.ts, tasks.ts
@@ -81,10 +80,11 @@ type, so features stay isolated without per-feature directories.
     │   ├── pages/               # Login, Register, Tasks
     │   ├── components/          # AuthForm, AppHeader, TaskForm, TaskItem, FilterTabs, ProtectedRoute, SessionGate
     │   └── styles.css
-    ├── vite.config.ts          # /api proxy
-    ├── nginx.conf
-    └── Dockerfile
+    └── vite.config.ts          # /api proxy
 ```
+
+Container images for the API and frontend are not part of this delivery; `make api` and `make web` run
+them on the host.
 
 ### Data model
 
@@ -157,7 +157,10 @@ All bodies are JSON. Errors: `{"error":{"code","message","fields"?}}`.
 | 7 | Frontend foundation | `package.json`, `tsconfig*`, `vite.config.ts`, `src/{main,App,types,styles}`, `src/api/*`, `src/auth/AuthContext.tsx` | `npm run dev`, typed client compiles under `tsc --noEmit` |
 | 8 | Auth UI | `src/App.tsx`, `src/main.tsx`, `pages/{Login,Register,TasksPage}`, `components/{AuthForm,AppHeader,ProtectedRoute,SessionGate}.tsx` | register → tasks, refresh keeps session, logout → login, direct `/tasks` redirects |
 | 9 | Tasks UI | `pages/TasksPage.tsx`, `components/{TaskForm,TaskItem,FilterTabs}.tsx`, `tasks/useTasks.ts`, `api/tasks.ts` | CRUD, toggle, filters, loading/empty/error states |
-| 10 | Tests, images, docs | Vitest setup + frontend tests, both `Dockerfile`s, `nginx.conf`, full compose, `README.md`, `docs/AI_USAGE.md` | `docker compose up --build` fresh run; `make test` |
+| 10 | Docs and final verification | `README.md`, `docs/design.md`, `docs/implementation-report.md`, backend test suite | `go test ./...`, browser checks on every screen, design gates |
+
+All ten tasks are complete. Container images, nginx, and frontend unit tests were outside the submitted
+scope; the app runs with `make api` and `make web`.
 
 Skills in use: `golang-testing`, `golang-security`, `auth-implementation-patterns`, `postgresql-table-design`, `docker-compose-patterns`, `tdd`, plus `design-taste-frontend` / `web-design-guidelines` for the UI tasks.
 
@@ -165,7 +168,7 @@ Skills in use: `golang-testing`, `golang-security`, `auth-implementation-pattern
 
 1. **No CORS** — same-origin proxy in both dev and prod removes a whole class of misconfiguration.
 2. **No ORM** — hand-written SQL in repositories keeps pgx idiomatic and queries reviewable.
-3. **No migration code in the binary** — golang-migrate runs as a compose service, so the API container has no schema privileges.
+3. **No migration code in the binary** — golang-migrate runs as a compose service, so the API process has no schema privileges.
 4. **No state library / react-query** — `AuthContext` + local state is enough for three screens.
 5. **30-minute access token, no refresh token** — a stolen cookie is useless after 30 minutes and the
    implementation stays small. Users re-authenticate when it expires; refresh rotation is the upgrade

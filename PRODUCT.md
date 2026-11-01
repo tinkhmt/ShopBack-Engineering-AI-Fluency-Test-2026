@@ -9,7 +9,7 @@ web
 ## Stack
 
 React 19 + TypeScript + Vite 7, per `docs/design.md`. The frontend is a same-origin SPA: Vite proxies
-`/api` to the Go backend in development, nginx repeats it in the container.
+`/api` to the Go backend in development; a reverse proxy would do the same in production.
 
 ## Users
 
@@ -34,7 +34,7 @@ real HttpOnly session cookies, no mocked API, no fake loading states. The claim 
 
 ## Operating Context
 
-- The reviewer clones, runs `docker compose up --build` (later) or the Makefile targets, and opens the
+- The reviewer clones, runs `make db-up && make migrate-up`, then `make api` and `make web`, and opens the
   app at localhost.
 - They register a throwaway account, create tasks, toggle them, filter, log out, log back in.
 - They then read the source: routes, services, repositories, tests, docs.

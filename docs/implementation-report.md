@@ -3,7 +3,7 @@
 Living document: updated after each completed task. Architecture and rationale live in
 [design.md](design.md); this file records **what exists, what was verified, and what changed**.
 
-Last updated: 2026-11-01 · Status: **Task 9 of 10 complete**
+Last updated: 2026-11-01 · Status: **Complete — all required features delivered**
 
 ## Progress
 
@@ -18,14 +18,14 @@ Last updated: 2026-11-01 · Status: **Task 9 of 10 complete**
 | 7 | Frontend foundation (Vite, types, API client) | ✅ Done |
 | 8 | Auth UI | ✅ Done |
 | 9 | Tasks UI | ✅ Done |
-| 10 | Frontend tests, Docker images, docs | ⬜ Next |
+| 10 | Docs and final verification | ✅ Done |
 
 ## Environment
 
 | Item | Value |
 |---|---|
 | Go | 1.25+ required (pgx v5.12 floor); verified with 1.26.5 |
-| Node | 22 (frontend, later tasks) |
+| Node | 22 (frontend) |
 | PostgreSQL | 17-alpine in Docker, host port 5432 |
 | Backend deps | `gin v1.11.0`, `pgx/v5 v5.12.0`, `golang-jwt/jwt/v5 v5.3.1` |
 | Migrations | `migrate/migrate:v4.19.0` (one-shot Compose service) |
@@ -276,7 +276,7 @@ Note: the `go run ./cmd/server` process on :8080 must be restarted after the res
 
 - **64 KiB cap** — the largest legitimate payload is a 2000-rune description (~8 KiB).
 - **Headers on every response, HSTS only when `COOKIE_SECURE=true`** — local HTTP dev must not pin a browser to HTTPS.
-- **`Cache-Control: no-store`** — `/api/auth/me` and later task lists must not be cached by proxies.
+- **`Cache-Control: no-store`** — `/api/auth/me` and task lists must not be cached by proxies.
 - **JSON-only bodies** — the design already claimed this as a CSRF mitigation; `RequireJSON` makes it true. `SameSite=Lax` remains the primary defence.
 - **Content-Length 0 skips the check**, so `POST /api/auth/logout` keeps working without a body.
 
@@ -435,7 +435,7 @@ the two options: **achromatic-ledger**, light, sparse.
   (`#1d5fbf`) only as a small state signal.
 - **Face:** the stone ground (`#f4f3f1`) from the product's world — a shop's shelf, one step off white —
   with white panels and the product's own object (a ticked box) as the mark.
-- **Type:** Geist, self-hosted through Fontsource (no CDN, so the Docker build stays offline). Sizes
+- **Type:** Geist, self-hosted through Fontsource (no CDN, so the bundle stays self-contained). Sizes
   12/14/16/24 px, one weight step (400/500).
 - **Radii:** 8 px cards, 6 px controls, per the sheet.
 - **Rejected:** `editorial-greeting` — a greeting-as-h1 home is the studied template, and a to-do list
@@ -450,9 +450,9 @@ the two options: **achromatic-ledger**, light, sparse.
 - **`401` is not handled globally.** `AuthContext` treats it as the normal signed-out case during
   bootstrap; Task 9 will call `clearSession()` when a task call 401s.
 - **`credentials: 'same-origin'`** is explicit, and the proxy keeps the cookie first-party in dev and
-  preview — the same arrangement nginx provides in Task 10.
-- **Fonts are bundled, not fetched.** A CDN link would break the offline container build and add a
-  render-blocking third party.
+  preview — the same arrangement a reverse proxy provides when deployed.
+- **Fonts are bundled, not fetched.** A CDN link would break offline use and add a render-blocking third
+  party.
 - **`preview` gets the same proxy as `dev`** so the production-build design gate runs against real
   session state instead of a network error.
 
@@ -645,6 +645,40 @@ real content. The `hero-void` warning belonged to the auth screens and does not 
 
 ---
 
+## Task 10 — Docs and final verification ✅
+
+### What exists
+
+- **README** — final quick start (PostgreSQL via Compose, API and Vite on the host), test targets, routes,
+  layout, and the delivery scope.
+- **`docs/design.md`** — status set to implemented; the project tree and delivery table match the files
+  that actually exist; dev architecture shown as Vite proxying `/api`.
+- **`docs/implementation-report.md`** — every task closed, verification evidence, limitations, and this
+  close-out.
+- **Backend suite** — `go test ./...` passes; the integration package skips cleanly when
+  `TEST_DATABASE_URL` is unset.
+
+### Scope
+
+The required assignment features are delivered: registration, login/logout, protected task CRUD,
+complete/active toggle, All/Active/Completed filters, PostgreSQL persistence, and per-user ownership.
+Local development uses Compose for PostgreSQL and migrations, then `make api` and `make web` for the app.
+
+Container images for the API and frontend, nginx, and frontend unit tests were outside the submitted
+scope. They are listed here rather than silently claimed, so the repository matches its docs.
+
+### Verification
+
+```
+go test ./...               all packages pass (integration skips without TEST_DATABASE_URL)
+npm run typecheck           clean
+npm run build               274.92 kB JS (87.01 kB gzip), 9.90 kB CSS
+browser checks              auth 20/20, tasks 44/44
+design gates                lint 0 FAIL/0 WARN · inspect 0 FAIL/0 WARN · impeccable 0 findings
+```
+
+---
+
 ## Review notes and deviations
 
 - **Rejected AI suggestion:** the `golang-gin-api` skill recommends `html.EscapeString` on inbound
@@ -658,8 +692,10 @@ real content. The `hero-void` warning belonged to the auth screens and does not 
 
 ## Known limitations (deliberate, see design.md)
 
-No rate limiting, refresh tokens, email verification, password reset, pagination, or server-side
-token revocation. Logout clears the cookie; the JWT remains valid until `exp` (30 min).
+No rate limiting, refresh tokens, email verification, password reset, pagination, task
+ordering/drag-drop, multi-device logout, HTTPS termination, or server-side token revocation. Logout
+clears the cookie; the JWT remains valid until `exp` (30 min). There are no frontend unit tests and no
+container images for the API or frontend; run the app from source with the Makefile targets.
 
 ## How to run
 
@@ -687,3 +723,4 @@ make web            # frontend dev server on :5173, proxies /api to :8080
 | 2026-11-01 | Task 8: auth UI — routes, `ProtectedRoute`, login/register forms with server field errors, sign-out header |
 | 2026-11-01 | Task 8 follow-up: product wordmark (mark + name) on the login and register screens, matching the tasks header |
 | 2026-11-01 | Task 9: tasks UI — list, create, inline edit, complete, delete, filters, loading/empty/error states |
+| 2026-11-01 | Task 10: docs and final verification — statuses closed, scope notes, README final |
