@@ -44,6 +44,14 @@ func Conflict(code, message string) *AppError {
 	return &AppError{Status: http.StatusConflict, Code: code, Message: message}
 }
 
+func PayloadTooLarge(message string) *AppError {
+	return &AppError{Status: http.StatusRequestEntityTooLarge, Code: "payload_too_large", Message: message}
+}
+
+func UnsupportedMediaType(message string) *AppError {
+	return &AppError{Status: http.StatusUnsupportedMediaType, Code: "unsupported_media_type", Message: message}
+}
+
 func ServiceUnavailable(message string) *AppError {
 	return &AppError{Status: http.StatusServiceUnavailable, Code: "service_unavailable", Message: message}
 }

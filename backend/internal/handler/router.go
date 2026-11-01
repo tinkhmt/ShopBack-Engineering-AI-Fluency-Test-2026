@@ -34,7 +34,8 @@ func NewRouter(cfg *config.Config, db Pinger, authHandler *AuthHandler, tokens *
 	// let clients spoof c.ClientIP().
 	_ = r.SetTrustedProxies(nil)
 
-	r.Use(middleware.Recovery(), middleware.Logger())
+	r.Use(middleware.Recovery(), middleware.Logger(), middleware.Security(cfg.CookieSecure),
+		middleware.BodyLimit(), middleware.RequireJSON())
 
 	r.GET("/healthz", health(db))
 

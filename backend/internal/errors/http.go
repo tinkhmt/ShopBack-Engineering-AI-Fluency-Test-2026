@@ -44,6 +44,13 @@ func Fail(c *gin.Context, err error) {
 
 // BindError turns Gin/validator binding failures into a field-level 400.
 func BindError(err error) *AppError {
+	// MaxBytesReader aborts mid-read; without this the client would see a
+	// misleading 400 instead of 413.
+	var maxBytesErr *http.MaxBytesError
+	if stderrors.As(err, &maxBytesErr) {
+		return PayloadTooLarge("request body is too large")
+	}
+
 	var validationErrs validator.ValidationErrors
 	if !stderrors.As(err, &validationErrs) {
 		return BadRequest("invalid_request", "request body must be valid JSON")

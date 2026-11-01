@@ -132,7 +132,10 @@ All bodies are JSON. Errors: `{"error":{"code","message","fields"?}}`.
 | CSRF | `SameSite=Lax` + mutations are non-GET + JSON-only bodies + same-origin proxy |
 | IDOR | Every read/write has `user_id = $1`; foreign resource returns `404`, not `403` (no existence leak) |
 | SQL injection | pgx parameterised queries only; no string-built SQL |
-| Input abuse | Email format/length, title 1–255 runes after trim, description ≤2000 runes, `status` enum, request body size cap |
+| Input abuse | Email format/length, title 1–255 runes after trim, description ≤2000 runes, `status` enum |
+| Request body | 64 KiB cap (`http.MaxBytesReader`) → `413 payload_too_large` |
+| Content type | Non-GET bodies must be `application/json` → `415 unsupported_media_type`; blocks cross-site form posts |
+| Response headers | `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, CSP `default-src 'none'`, `Cache-Control: no-store`; HSTS when `COOKIE_SECURE=true` |
 | Error leakage | Internal errors logged with `slog`, client gets a generic `500`; DB errors never serialised |
 | Log hygiene | Passwords, hashes and tokens never logged |
 | Race on register | DB unique index is the source of truth; map pgx `23505` → `409` |

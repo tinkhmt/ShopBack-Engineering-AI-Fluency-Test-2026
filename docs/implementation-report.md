@@ -3,7 +3,7 @@
 Living document: updated after each completed task. Architecture and rationale live in
 [design.md](design.md); this file records **what exists, what was verified, and what changed**.
 
-Last updated: 2026-11-01 · Status: **Task 3 of 10 complete**
+Last updated: 2026-11-01 · Status: **Task 4 of 10 complete**
 
 ## Progress
 
@@ -12,8 +12,8 @@ Last updated: 2026-11-01 · Status: **Task 3 of 10 complete**
 | 1 | Skeleton, Compose, database migrations | ✅ Done |
 | 2 | Backend foundation (config, DB, router, errors) | ✅ Done |
 | 3 | Auth module (register / login / logout / me) | ✅ Done |
-| 4 | Hardening + token edge cases | ⬜ Next |
-| 5 | Task module (CRUD, filter, ownership) | ⬜ Pending |
+| 4 | Hardening + token edge cases | ✅ Done |
+| 5 | Task module (CRUD, filter, ownership) | ⬜ Next |
 | 6 | Backend integration test suite | ⬜ Pending |
 | 7 | Frontend foundation (Vite, types, API client) | ⬜ Pending |
 | 8 | Auth UI | ⬜ Pending |
@@ -249,6 +249,53 @@ Note: the `go run ./cmd/server` process on :8080 must be restarted after the res
 
 ---
 
+## Task 4 — Hardening ✅
+
+### What exists
+
+| File | Purpose |
+|---|---|
+| `internal/middleware/security.go` | security headers, 64 KiB body cap, JSON-only bodies |
+| `internal/errors/errors.go` | `413 payload_too_large`, `415 unsupported_media_type` |
+| `internal/errors/http.go` | `*http.MaxBytesError` → `413` instead of a misleading `400` |
+| `internal/handler/router.go` | middleware applied to every route |
+| `internal/handler/security_test.go` | 8 tests (10 with subtests) |
+
+### Behavior
+
+| Case | Result |
+|---|---|
+| Any response | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, `Cache-Control: no-store` |
+| `COOKIE_SECURE=true` | adds `Strict-Transport-Security: max-age=31536000; includeSubDomains` |
+| Expired / tampered / `alg=none` cookie on `/me` | `401 unauthorized` |
+| Body > 64 KiB | `413 payload_too_large` |
+| `Content-Type` not `application/json` on POST | `415 unsupported_media_type` |
+| `application/json; charset=utf-8` | accepted |
+
+### Decisions
+
+- **64 KiB cap** — the largest legitimate payload is a 2000-rune description (~8 KiB).
+- **Headers on every response, HSTS only when `COOKIE_SECURE=true`** — local HTTP dev must not pin a browser to HTTPS.
+- **`Cache-Control: no-store`** — `/api/auth/me` and later task lists must not be cached by proxies.
+- **JSON-only bodies** — the design already claimed this as a CSRF mitigation; `RequireJSON` makes it true. `SameSite=Lax` remains the primary defence.
+- **Content-Length 0 skips the check**, so `POST /api/auth/logout` keeps working without a body.
+
+### Verification
+
+```
+go vet ./...    clean
+go test ./...   44 tests pass
+GET  /healthz                             200 + 5 headers (no HSTS in dev)
+GET  /api/auth/me expired|tampered|none   401 unauthorized
+POST /api/auth/register 70 KiB            413 payload_too_large
+POST /api/auth/register text/plain        415 unsupported_media_type
+POST /api/auth/login                      200 + cookie (no regression)
+GET  /api/auth/me cookie                  200
+POST /api/auth/logout                     204
+```
+
+---
+
 ## Review notes and deviations
 
 - **Rejected AI suggestion:** the `golang-gin-api` skill recommends `html.EscapeString` on inbound
@@ -282,3 +329,4 @@ make test           # backend tests
 | 2026-11-01 | Task 2: backend foundation, error envelope, health check, tests |
 | 2026-11-01 | Task 3: auth module, 30-minute JWT cookie, session middleware, tests |
 | 2026-11-01 | Refactor: layer-first layout (`dto`, `errors`, `handler`, `logger`, `model`, `repository`, `service`, `util`), `cmd/server`, composition root |
+| 2026-11-01 | Task 4: security headers, 64 KiB body cap, JSON-only bodies, token edge-case tests |
