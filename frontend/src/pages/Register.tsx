@@ -13,7 +13,10 @@ export default function Register() {
   return (
     <main className="shell">
       <div className="auth">
-        <span className="mark" aria-hidden="true" />
+        <div className="brand">
+          <span className="mark" aria-hidden="true" />
+          ShopBack To-Do
+        </div>
         <h1 className="title">Create your account</h1>
         <p className="lead">One list per account. Start with what needs doing today.</p>
 

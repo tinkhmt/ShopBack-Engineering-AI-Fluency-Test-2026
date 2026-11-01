@@ -13,7 +13,10 @@ export default function Login() {
   return (
     <main className="shell">
       <div className="auth">
-        <span className="mark" aria-hidden="true" />
+        <div className="brand">
+          <span className="mark" aria-hidden="true" />
+          ShopBack To-Do
+        </div>
         <h1 className="title">Sign in</h1>
         <p className="lead">Your list is waiting. Sign in to pick up where you left off.</p>
 

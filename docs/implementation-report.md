@@ -596,3 +596,4 @@ make web            # frontend dev server on :5173, proxies /api to :8080
 | 2026-11-01 | Task 6: Postgres integration suite (two users, full flow, DB-level isolation), `make test-integration` |
 | 2026-11-01 | Task 7: frontend foundation — Vite/TS, typed API client, `AuthContext`, dealt design tokens (`achromatic-ledger`) |
 | 2026-11-01 | Task 8: auth UI — routes, `ProtectedRoute`, login/register forms with server field errors, sign-out header |
+| 2026-11-01 | Task 8 follow-up: product wordmark (mark + name) on the login and register screens, matching the tasks header |

@@ -190,12 +190,20 @@ a {
   padding-inline: var(--pad);
 }
 
-.wordmark {
+.wordmark,
+.brand {
   display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 500;
+}
+
+.wordmark {
   text-decoration: none;
+}
+
+.brand {
+  margin-bottom: 20px;
 }
 
 .header-session {
@@ -249,10 +257,6 @@ a {
   max-width: var(--measure-form);
   margin: auto;
   padding: clamp(40px, 10vh, 80px) var(--pad);
-}
-
-.auth .mark {
-  margin-bottom: 20px;
 }
 
 .card {
