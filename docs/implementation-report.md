@@ -3,7 +3,7 @@
 Living document: updated after each completed task. Architecture and rationale live in
 [design.md](design.md); this file records **what exists, what was verified, and what changed**.
 
-Last updated: 2026-11-01 · Status: **Task 4 of 10 complete**
+Last updated: 2026-11-01 · Status: **Task 6 of 10 complete**
 
 ## Progress
 
@@ -13,9 +13,9 @@ Last updated: 2026-11-01 · Status: **Task 4 of 10 complete**
 | 2 | Backend foundation (config, DB, router, errors) | ✅ Done |
 | 3 | Auth module (register / login / logout / me) | ✅ Done |
 | 4 | Hardening + token edge cases | ✅ Done |
-| 5 | Task module (CRUD, filter, ownership) | ⬜ Next |
-| 6 | Backend integration test suite | ⬜ Pending |
-| 7 | Frontend foundation (Vite, types, API client) | ⬜ Pending |
+| 5 | Task module (CRUD, filter, ownership) | ✅ Done |
+| 6 | Backend integration test suite | ✅ Done |
+| 7 | Frontend foundation (Vite, types, API client) | ⬜ Next |
 | 8 | Auth UI | ⬜ Pending |
 | 9 | Tasks UI | ⬜ Pending |
 | 10 | Frontend tests, Docker images, docs | ⬜ Pending |
@@ -296,6 +296,117 @@ POST /api/auth/logout                     204
 
 ---
 
+## Task 5 — Task module ✅
+
+### What exists
+
+| File | Purpose |
+|---|---|
+| `internal/model/task.go` | `Task` domain struct |
+| `internal/dto/task.go` | create/update requests, `{task}` and `{tasks}` envelopes |
+| `internal/repository/task_repository.go` | `TaskRepository` + pgx implementation; `ErrTaskNotFound` |
+| `internal/service/task_service.go` | validation, status parsing, 404 translation |
+| `internal/handler/task_handler.go` | 4 handlers + `parseTaskID` |
+| `internal/handler/router.go` | `Deps` struct; `/api/tasks` behind `RequireSession` |
+| `internal/service/task_service_test.go` | 11 tests |
+| `internal/handler/task_handler_test.go` | 10 tests |
+
+### Endpoints
+
+| Method | Path | Success | Failures |
+|---|---|---|---|
+| GET | `/api/tasks?status=all\|active\|completed` | `200 {"tasks":[...]}` newest first | `400` bad status, `401` |
+| POST | `/api/tasks` | `201 {"task":{...}}` | `400` validation, `401` |
+| PATCH | `/api/tasks/:id` | `200 {"task":{...}}` | `400` empty patch/invalid id, `401`, `404` |
+| DELETE | `/api/tasks/:id` | `204` | `400` invalid id, `401`, `404` |
+
+### Decisions
+
+- **`handler.Deps` struct** replaces positional router arguments now that two modules exist; two
+  same-typed `*Handler` parameters would be silently swappable.
+- **Ownership is a SQL predicate**, not a lookup: every query carries `WHERE user_id = $1`, and
+  `pgx.ErrNoRows` / `RowsAffected() == 0` → `404`. A foreign task and a missing task are identical.
+- **PATCH uses pointers** (`*string`, `*bool`) so `{"completed":false}` differs from "absent".
+  `UPDATE … SET title = COALESCE($3, title)` leaves untouched columns alone; `description:""` clears.
+- **Empty patch → `400 validation_failed`** with `fields.body`; the DB is never touched.
+- **Rune counts** (`utf8.RuneCountInString`) match Postgres `char_length` and the `CHECK` constraints.
+- **`updated_at = now()` in SQL**, one clock, so `createdAt`/`updatedAt` cannot drift.
+- **Empty list serialises as `[]`**, never `null`, so the frontend can map without a guard.
+- **Status filter** parsed in the service: `""`/`all` → no filter, `active`/`completed` → `*bool`,
+  anything else → `400 fields.status`.
+
+### Verification
+
+```
+go vet ./...    clean
+go test ./...   65 tests pass
+
+alice: POST /api/tasks               201, title trimmed, completed=false
+alice: GET  /api/tasks               200, newest first
+alice: PATCH completed=true          200, updatedAt advanced
+alice: status=active|completed       1 task each; status=archived → 400
+alice: POST blank title              400 fields.title
+alice: PATCH {}                      400 fields.body
+alice: DELETE /api/tasks/abc         400 invalid_id
+bob:   GET   /api/tasks              200 {"tasks":[]}
+bob:   PATCH/DELETE alice's task     404 (task untouched)
+none:  GET   /api/tasks              401
+alice: DELETE own task               204, then 404
+psql:  tasks scoped by user_id, only the expected row remains
+```
+
+---
+
+## Task 6 — Backend integration suite ✅
+
+### What exists
+
+| File | Purpose |
+|---|---|
+| `backend/internal/integration/api_test.go` | `TestMain` (test-DB guard + schema reset), `TestFullFlowTwoUsers`, `TestDuplicateEmailHitsUniqueIndex` |
+| `Makefile` | `TEST_DATABASE_URL` var, `test-integration` target (creates `todo_test` on first use) |
+| `README.md` | Tests section: `make test` vs `make test-integration` |
+| `docs/design.md` | task-6 row points at `internal/integration` |
+
+### Decisions
+
+- **The suite lives in `internal/integration`, not `internal/handler`**, because it wires the real
+  repository/service/handler stack; the handler tests keep using the in-memory fake.
+- **Dedicated `todo_test` database**, never the dev data. `TestMain` refuses any URL whose database
+  name does not end in `_test` before it drops anything.
+- **Schema reset is done by the test binary**, not golang-migrate: `DROP TABLE IF EXISTS tasks, users
+  CASCADE`, then every `migrations/*.up.sql` in sorted order. Reruns are deterministic.
+  `shortcut:` if migrations ever need down/ordering semantics, switch to golang-migrate here.
+- **No `TEST_DATABASE_URL` → skip with exit 0**, so `go test ./...` and `make test` need no Docker.
+  A URL that is set but unreachable fails loudly instead of silently skipping.
+- **`httptest.NewServer` + stdlib `cookiejar`** gives real cookie round-trips (set/expire/scope)
+  rather than hand-copied `Cookie` headers.
+- **The test router is wired like `cmd/server/main.go`** — real repositories, services, token
+  manager and 30-minute TTL — so the suite covers the composition root too.
+- **The DB is asserted directly** at the end of the flow (`SELECT count(*) … WHERE user_id = $1`),
+  so isolation is proven in storage, not only in responses.
+
+### Verification
+
+```
+DOCKER_CONFIG=… make test-integration   # first run creates todo_test
+--- PASS: TestFullFlowTwoUsers (0.44s)
+--- PASS: TestDuplicateEmailHitsUniqueIndex (0.42s)
+ok   …/internal/integration  0.884s
+
+make test-integration (second run)      # same result: reset is idempotent
+go test ./...                           # integration package prints "skipped", 65 unit tests pass
+go vet ./...                            clean
+TEST_DATABASE_URL=<...>/todo go test ./internal/integration/...   # refuses: "todo" does not end in _test
+```
+
+Flow covered: register two users → `/me` (and `401` anonymous) → create/list with newest-first
+order → `PATCH completed` with `updatedAt` advanced → `?status=active|completed` → blank title,
+empty patch and bad status all `400` → cross-user `PATCH`/`DELETE` both `404` with the owner's row
+unchanged → delete `204` then `404` → logout `204` then `/me` `401` → direct SQL row counts.
+
+---
+
 ## Review notes and deviations
 
 - **Rejected AI suggestion:** the `golang-gin-api` skill recommends `html.EscapeString` on inbound
@@ -319,6 +430,7 @@ cp .env.example .env
 make db-up && make migrate-up
 make api            # API on :8080
 make test           # backend tests
+make test-integration  # full API flow against a real todo_test database
 ```
 
 ## Change log
@@ -330,3 +442,5 @@ make test           # backend tests
 | 2026-11-01 | Task 3: auth module, 30-minute JWT cookie, session middleware, tests |
 | 2026-11-01 | Refactor: layer-first layout (`dto`, `errors`, `handler`, `logger`, `model`, `repository`, `service`, `util`), `cmd/server`, composition root |
 | 2026-11-01 | Task 4: security headers, 64 KiB body cap, JSON-only bodies, token edge-case tests |
+| 2026-11-01 | Task 5: task CRUD, status filter, SQL-enforced ownership, 21 tests |
+| 2026-11-01 | Task 6: Postgres integration suite (two users, full flow, DB-level isolation), `make test-integration` |

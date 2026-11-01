@@ -48,13 +48,21 @@ func run() error {
 
 	// Composition root: every layer receives its dependencies explicitly.
 	userRepository := repository.NewUserRepository(pool)
+	taskRepository := repository.NewTaskRepository(pool)
 	tokenManager := util.NewTokenManager(cfg.JWTSecret, cfg.JWTTTL)
 	authService := service.NewAuthService(userRepository, tokenManager)
+	taskService := service.NewTaskService(taskRepository)
 	authHandler := handler.NewAuthHandler(authService, cfg.CookieSecure, cfg.JWTTTL)
+	taskHandler := handler.NewTaskHandler(taskService)
 
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           handler.NewRouter(cfg, pool, authHandler, tokenManager),
+		Addr: cfg.HTTPAddr,
+		Handler: handler.NewRouter(cfg, handler.Deps{
+			DB:     pool,
+			Auth:   authHandler,
+			Tasks:  taskHandler,
+			Tokens: tokenManager,
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

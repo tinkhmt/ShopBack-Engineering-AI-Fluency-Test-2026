@@ -11,17 +11,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/tinkhmt/shopback-todo/backend/internal/config"
-	"github.com/tinkhmt/shopback-todo/backend/internal/handler"
-	"github.com/tinkhmt/shopback-todo/backend/internal/service"
 	"github.com/tinkhmt/shopback-todo/backend/internal/util"
 )
 
 func newSecureTestRouter() *gin.Engine {
-	tokens := util.NewTokenManager(strings.Repeat("s", 32), time.Minute)
-	svc := service.NewAuthService(newMemoryRepository(), tokens)
-	authHandler := handler.NewAuthHandler(svc, true, time.Minute)
-	return handler.NewRouter(&config.Config{Env: "test", JWTTTL: time.Minute, CookieSecure: true},
-		fakePinger{}, authHandler, tokens)
+	return buildRouter(&config.Config{Env: "test", JWTTTL: time.Minute, CookieSecure: true},
+		fakePinger{}, newMemoryTaskRepository())
 }
 
 func TestSecurityHeaders(t *testing.T) {
