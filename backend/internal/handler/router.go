@@ -1,14 +1,16 @@
-package server
+package handler
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/tinkhmt/shopback-todo/backend/internal/config"
-	"github.com/tinkhmt/shopback-todo/backend/internal/httpx"
+	apperrors "github.com/tinkhmt/shopback-todo/backend/internal/errors"
 	"github.com/tinkhmt/shopback-todo/backend/internal/middleware"
+	"github.com/tinkhmt/shopback-todo/backend/internal/util"
 )
 
 // Pinger is the only database capability the health check needs.
@@ -16,8 +18,9 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// New builds the router. Modules are mounted here as they are added.
-func New(cfg *config.Config, db Pinger) *gin.Engine {
+// NewRouter assembles the HTTP surface. It receives already-built handlers, so
+// wiring stays in cmd/server/main.go.
+func NewRouter(cfg *config.Config, db Pinger, authHandler *AuthHandler, tokens *util.TokenManager) *gin.Engine {
 	// Release mode suppresses Gin's route dump; the structured logger already
 	// reports every request.
 	if cfg.Env == "test" {
@@ -35,12 +38,18 @@ func New(cfg *config.Config, db Pinger) *gin.Engine {
 
 	r.GET("/healthz", health(db))
 
+	authRoutes := r.Group("/api/auth")
+	authRoutes.POST("/register", authHandler.Register)
+	authRoutes.POST("/login", authHandler.Login)
+	authRoutes.POST("/logout", authHandler.Logout)
+	authRoutes.GET("/me", middleware.RequireSession(tokens), authHandler.Me)
+
 	r.HandleMethodNotAllowed = true
 	r.NoRoute(func(c *gin.Context) {
-		httpx.Fail(c, httpx.NotFound("route not found"))
+		apperrors.Fail(c, apperrors.NotFound("route not found"))
 	})
 	r.NoMethod(func(c *gin.Context) {
-		httpx.Fail(c, httpx.MethodNotAllowed())
+		apperrors.Fail(c, apperrors.MethodNotAllowed())
 	})
 
 	return r
@@ -52,10 +61,10 @@ func health(db Pinger) gin.HandlerFunc {
 		defer cancel()
 
 		if err := db.Ping(ctx); err != nil {
-			httpx.Fail(c, httpx.ServiceUnavailable("database unavailable"))
+			apperrors.Fail(c, apperrors.ServiceUnavailable("database unavailable"))
 			return
 		}
 
-		c.JSON(200, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	}
 }

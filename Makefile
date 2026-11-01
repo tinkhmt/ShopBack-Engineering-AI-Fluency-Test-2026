@@ -28,7 +28,7 @@ migrate-version: ## print the current schema version
 	$(MIGRATE) version
 
 api: ## run the API on the host against the local database
-	set -a && source .env && set +a && cd backend && go run ./cmd/api
+	set -a && source .env && set +a && cd backend && go run ./cmd/server
 
 test: ## run backend tests
 	cd backend && go test ./...

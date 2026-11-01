@@ -3,7 +3,7 @@
 Living document: updated after each completed task. Architecture and rationale live in
 [design.md](design.md); this file records **what exists, what was verified, and what changed**.
 
-Last updated: 2026-11-01 · Status: **Task 2 of 10 complete**
+Last updated: 2026-11-01 · Status: **Task 3 of 10 complete**
 
 ## Progress
 
@@ -11,8 +11,8 @@ Last updated: 2026-11-01 · Status: **Task 2 of 10 complete**
 |---|------|--------|
 | 1 | Skeleton, Compose, database migrations | ✅ Done |
 | 2 | Backend foundation (config, DB, router, errors) | ✅ Done |
-| 3 | Auth module (register / login / logout / me) | ⬜ Next |
-| 4 | Auth middleware + hardening | ⬜ Pending |
+| 3 | Auth module (register / login / logout / me) | ✅ Done |
+| 4 | Hardening + token edge cases | ⬜ Next |
 | 5 | Task module (CRUD, filter, ownership) | ⬜ Pending |
 | 6 | Backend integration test suite | ⬜ Pending |
 | 7 | Frontend foundation (Vite, types, API client) | ⬜ Pending |
@@ -27,7 +27,7 @@ Last updated: 2026-11-01 · Status: **Task 2 of 10 complete**
 | Go | 1.25+ required (pgx v5.12 floor); verified with 1.26.5 |
 | Node | 22 (frontend, later tasks) |
 | PostgreSQL | 17-alpine in Docker, host port 5432 |
-| Backend deps | `gin v1.11.0`, `pgx/v5 v5.12.0` |
+| Backend deps | `gin v1.11.0`, `pgx/v5 v5.12.0`, `golang-jwt/jwt/v5 v5.3.1` |
 | Migrations | `migrate/migrate:v4.19.0` (one-shot Compose service) |
 
 ### Skills installed (project-local, tracked in `skills-lock.json`)
@@ -106,15 +106,17 @@ make migrate-up   → 1/u init, version = 1
 
 | File | Purpose |
 |---|---|
-| `backend/cmd/api/main.go` | config load, logger, pgx pool, HTTP server, signal handling |
+| `backend/cmd/server/main.go` | config load, logger, pgx pool, dependency wiring, HTTP server, signal handling |
 | `backend/internal/config/config.go` | env parsing, defaults, aggregated fail-fast errors |
 | `backend/internal/config/config_test.go` | 5 tests |
 | `backend/internal/database/postgres.go` | `pgxpool` creation + startup ping |
-| `backend/internal/httpx/httpx.go` | typed errors, JSON envelope, single `Fail` writer |
+| `backend/internal/errors/errors.go` | `AppError`, constructors |
+| `backend/internal/errors/http.go` | single `Fail` writer, JSON envelope, binding errors |
+| `backend/internal/logger/logger.go` | `slog` setup (JSON in production, text otherwise) |
 | `backend/internal/middleware/logger.go` | structured request log via `slog` |
 | `backend/internal/middleware/recovery.go` | panic → JSON 500, stack logged server-side |
-| `backend/internal/server/server.go` | router assembly, `/healthz`, 404/405 handlers |
-| `backend/internal/server/server_test.go` | 5 tests |
+| `backend/internal/handler/router.go` | router assembly, `/healthz`, 404/405 handlers |
+| `backend/internal/handler/router_test.go` | health, 404, 405, panic recovery |
 
 ### Endpoints
 
@@ -133,8 +135,8 @@ Error envelope (all failures):
 
 - **Config is loaded once and fails fast**, reporting every problem at once. Nothing else reads
   `os.Getenv`. Production refuses to start unless `COOKIE_SECURE=true`.
-- **Errors carry their HTTP status** (`httpx.Error`). Handlers and services never pick status codes;
-  `httpx.Fail` is the only place that writes an error response.
+- **Errors carry their HTTP status** (`errors.AppError`). Handlers and services never pick status
+  codes; `errors.Fail` is the only place that writes an error response.
 - **5xx causes are logged, never serialized.** Clients get `"internal server error"`.
 - **Health check pings the database** with a 2s timeout; the router depends on a small `Pinger`
   interface, so health tests need no database.
@@ -174,6 +176,79 @@ unreachable DB    fatal: ping database: ... connection refused, exit 1
 
 ---
 
+## Task 3 — Auth module and session middleware ✅
+
+### What exists
+
+| File | Purpose |
+|---|---|
+| `internal/model/user.go` | `User` domain model (no JSON tags) |
+| `internal/repository/user_repository.go` | `UserRepository` interface + pgx implementation; `23505` → `ErrEmailTaken` |
+| `internal/util/password.go` | bcrypt cost 12, 72-byte cap, fixed dummy hash for timing |
+| `internal/util/token.go` | HS256 issue/parse, `iss`/`sub`/`iat`/`exp`, algorithm pinned |
+| `internal/util/context.go` | typed user-ID context helpers |
+| `internal/service/auth_service.go` | `Register`, `Login`, `UserByID`; normalization, validation, timing equalisation |
+| `internal/handler/auth_handler.go` | hardened cookie, 4 auth handlers |
+| `internal/dto/auth.go` | request/response payloads |
+| `internal/errors/http.go` | validator errors → field-level `400` |
+| `internal/middleware/auth.go` | `RequireSession`: cookie → verified user ID |
+
+### Endpoints
+
+| Method | Path | Success | Failures |
+|---|---|---|---|
+| POST | `/api/auth/register` | `201 {user}` + `Set-Cookie` | `400`, `409 email_taken` |
+| POST | `/api/auth/login` | `200 {user}` + `Set-Cookie` | `400`, `401` |
+| POST | `/api/auth/logout` | `204` + cleared cookie | — |
+| GET | `/api/auth/me` | `200 {user}` | `401` |
+
+Cookie: `auth_token=<jwt>; Path=/; Max-Age=1800; HttpOnly; SameSite=Lax` (+ `Secure` when
+configured). The token is never returned in a JSON body.
+
+### Decisions
+
+- **30-minute access token** (`.env`: `JWT_TTL=30m`), no refresh token.
+- **JWT in the service, cookie in the handler.** The service returns `(user, token)`; only the
+  transport layer sets cookies.
+- **No duplicate-email pre-check.** `INSERT` relies on the `LOWER(email)` unique index; `23505`
+  maps to `409`, so concurrent registrations cannot both succeed.
+- **Timing-equalised login.** An unknown email still runs bcrypt against a fixed cost-12 hash.
+- **Two validation layers.** Binding catches shape (required/min/max); the service trims and
+  lowercases the email, validates it with `net/mail`, and checks the password in **bytes** (8–72)
+  because bcrypt truncates past 72. Passwords are never trimmed.
+- **`/me` re-reads the user from Postgres**, so a deleted account's token stops working immediately.
+- **Explicit dependency injection in `cmd/server/main.go`** — the only place that knows every layer:
+  `repository → service → handler → router`. `handler.NewRouter` receives already-built handlers and
+  only mounts routes, so there is no DI container and no service locator.
+
+### Tests
+
+| Area | Coverage |
+|---|---|
+| password | hash ≠ plaintext, correct/wrong verify, 72 bytes accepted, 73 rejected |
+| token | round-trip, expired, wrong secret, `alg=none`, tampered signature |
+| service | email normalization, duplicate (case-insensitive), 4 validation cases, login success/failure/unknown, deleted user |
+| handler | 201 + cookie flags, duplicate 409, validation 400, login 200/401, `/me` 200/401, forged cookie, logout clears cookie, malformed JSON |
+
+### Verification
+
+```
+go vet ./...   clean
+go test ./...  auth 4.4s, config and server packages pass
+POST /api/auth/register  201, Set-Cookie: Path=/; Max-Age=1800; HttpOnly; SameSite=Lax
+POST /api/auth/register (ALICE@example.com)  409 email_taken
+POST /api/auth/login (wrong password)        401 invalid email or password
+GET  /api/auth/me (cookie)                   200 {"user":{"id":1,"email":"alice@example.com"}}
+POST /api/auth/register (short password)     400 fields.password
+POST /api/auth/logout                        204, Set-Cookie: Max-Age=0
+GET  /api/auth/me (after logout)             401 authentication required
+DB check: email normalized, password_hash prefix $2a$12$, length 60
+```
+
+Note: the `go run ./cmd/server` process on :8080 must be restarted after the restructure.
+
+---
+
 ## Review notes and deviations
 
 - **Rejected AI suggestion:** the `golang-gin-api` skill recommends `html.EscapeString` on inbound
@@ -188,7 +263,7 @@ unreachable DB    fatal: ping database: ... connection refused, exit 1
 ## Known limitations (deliberate, see design.md)
 
 No rate limiting, refresh tokens, email verification, password reset, pagination, or server-side
-token revocation. Logout clears the cookie; the JWT remains valid until `exp` (24h).
+token revocation. Logout clears the cookie; the JWT remains valid until `exp` (30 min).
 
 ## How to run
 
@@ -205,3 +280,5 @@ make test           # backend tests
 |---|---|
 | 2026-11-01 | Task 1: Compose, migrations, schema verified |
 | 2026-11-01 | Task 2: backend foundation, error envelope, health check, tests |
+| 2026-11-01 | Task 3: auth module, 30-minute JWT cookie, session middleware, tests |
+| 2026-11-01 | Refactor: layer-first layout (`dto`, `errors`, `handler`, `logger`, `model`, `repository`, `service`, `util`), `cmd/server`, composition root |
