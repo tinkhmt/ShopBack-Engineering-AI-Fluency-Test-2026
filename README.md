@@ -70,7 +70,9 @@ npm run typecheck   # strict TypeScript, no emit
 npm run build       # typecheck + production bundle
 ```
 
-Routes: `/login`, `/register`, and `/tasks` (protected — an anonymous visitor is sent to `/login`).
+Routes: `/login`, `/register`, and `/tasks` (protected — an anonymous visitor is sent to `/login`). The
+tasks screen adds, edits inline, completes, deletes and filters tasks; counts and empty/error states are
+part of the same screen.
 
 Other targets: `make help`.
 
@@ -93,9 +95,10 @@ backend/
     util/         bcrypt, JWT, context helpers
   migrations/     golang-migrate SQL migrations
 frontend/
-  src/api/        typed client + auth calls
+  src/api/        typed client, auth and task calls
   src/auth/       AuthContext (session bootstrap, login, logout)
-  src/components/ AuthForm, AppHeader, ProtectedRoute, SessionGate
+  src/tasks/      useTasks (list state, mutations, load/action errors)
+  src/components/ AuthForm, AppHeader, ProtectedRoute, SessionGate, TaskForm, TaskItem, FilterTabs
   src/pages/      Login, Register, TasksPage
   src/types.ts    wire types mirroring the Go DTOs
   src/styles.css  design tokens, reset, screens

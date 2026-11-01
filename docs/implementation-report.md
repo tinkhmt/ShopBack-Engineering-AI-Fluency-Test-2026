@@ -3,7 +3,7 @@
 Living document: updated after each completed task. Architecture and rationale live in
 [design.md](design.md); this file records **what exists, what was verified, and what changed**.
 
-Last updated: 2026-11-01 · Status: **Task 8 of 10 complete**
+Last updated: 2026-11-01 · Status: **Task 9 of 10 complete**
 
 ## Progress
 
@@ -17,8 +17,8 @@ Last updated: 2026-11-01 · Status: **Task 8 of 10 complete**
 | 6 | Backend integration test suite | ✅ Done |
 | 7 | Frontend foundation (Vite, types, API client) | ✅ Done |
 | 8 | Auth UI | ✅ Done |
-| 9 | Tasks UI | ⬜ Next |
-| 10 | Frontend tests, Docker images, docs | ⬜ Pending |
+| 9 | Tasks UI | ✅ Done |
+| 10 | Frontend tests, Docker images, docs | ⬜ Next |
 
 ## Environment
 
@@ -556,6 +556,95 @@ needs a session to be seen at all.
 
 ---
 
+## Task 9 — Tasks UI ✅
+
+### What exists
+
+| File | Purpose |
+|---|---|
+| `frontend/src/api/tasks.ts` | typed `list` / `create` / `update` / `remove` wrappers over the shared client |
+| `frontend/src/tasks/useTasks.ts` | list state, loading/error state, mutations, 401 → `clearSession()` |
+| `frontend/src/components/TaskForm.tsx` | one form for create and edit: field errors, Escape to cancel, focus handling |
+| `frontend/src/components/TaskItem.tsx` | checkbox, title button (opens edit), optional note, delete button |
+| `frontend/src/components/FilterTabs.tsx` | `All \| Active \| Completed`, `aria-pressed`, labelled group |
+| `frontend/src/pages/TasksPage.tsx` | page head + counts, composer, filters, list, loading/empty/error states |
+| `frontend/src/styles.css` | task screen, rows, filters, states, skeleton, 44 px coarse-pointer targets |
+
+### Behavior
+
+- **Create** — title required (255 max), note optional (2000 max). New tasks appear first, the form
+  clears, and focus stays in the title field for the next entry.
+- **Toggle** — checkbox PATCHes `{completed}`; the row is struck through and muted, counts update.
+- **Edit** — clicking the title swaps the row for the same form, prefilled. Save sends only the keys that
+  changed; Escape or Cancel restores the row without a request; focus returns to the title button.
+- **Delete** — `window.confirm` first, then `DELETE`; focus returns to the add field. A `404` means the row
+  is already gone, so it is removed without an error.
+- **Filters** — instant, client-side, with honest counts from the full list. Each filter has its own empty
+  copy: first run, no active tasks, nothing completed.
+- **Failure** — a failed load shows an in-place message with **Try again**; a failed mutation shows a
+  dismissible notice above the list and leaves the row unchanged. A `401` clears the session and the
+  guard sends the user to `/login`.
+
+### Decisions
+
+- **One `GET /api/tasks`, filtered in the browser.** The list is small and unpaginated, so tabs switch
+  without a round trip and the counts can never disagree with the visible rows. The server-side
+  `?status=` filter stays implemented and covered by the integration suite; the UI does not need it.
+- **Server-first mutations, no optimistic writes.** Every mutation waits for the API response and replaces
+  the row with what the server returns. A rejected write never leaves a row that looks saved.
+- **Partial PATCH.** The backend's pointer-based update treats an absent key as “unchanged”, so the UI
+  sends only edited fields; a note-only edit cannot accidentally rewrite the title.
+- **No new dependency.** State is local React; confirmation is the platform's `window.confirm`; nothing
+  was added for forms, focus, or data fetching.
+- **Description is a single-line note.** It is a short annotation under the title, not a second document;
+  the API still accepts multi-line text, but the composer is one input.
+- **Counts appear once**, under the heading (`3 left · 1 done`); the filter tabs are labels, not counters,
+  so the same number is not repeated three times.
+
+### Design
+
+Same dealt sheet (`achromatic-ledger`): stone ground, one white 640 px card, ink text, one hue for state
+and focus. The page head sits outside the card so the screen has a title before the tool; the composer,
+filters and rows share the card, separated by hairlines rather than nested boxes. Completed rows recede
+with a strike and muted colour; the only accent is the checkbox and focus ring.
+
+No new tokens. Control targets grow to 44 px on coarse pointers; the delete control is a 32 px hit area on
+fine pointers and 44 px on touch. Focus is visible on every control, and the title button's ring hugs the
+text instead of spanning the row, so a focused row does not read as an input.
+
+### Verification
+
+Real browser over CDP (throwaway script in `/tmp`) against the dev server, with a fresh account:
+
+```
+44/44 checks passed
+register                    → /tasks, empty state, 0 left · 0 done
+create title only           → row listed, counts move, form clears, focus stays
+create with note            → newest first, note rendered
+toggle                      → strike-through, completed flag, counts move
+filters                     → All / Active / Completed show the right rows, aria-pressed
+edit                        → prefilled, title/note saved, counts unchanged
+partial PATCH               → {"title":…,"description":…}, then {"description":…} only
+Escape                      → closes the form, sends no request, title unchanged
+delete cancelled            → row stays; confirmed → row gone, focus to add field
+filtered empty              → "No active tasks. Everything is done."
+load failure                → in-place error + Try again; retry loads the list
+expired session             → 401 sends the user to /login
+no page exceptions
+
+npm run typecheck           clean
+npm run build               274.92 kB JS (87.01 kB gzip), 9.90 kB CSS
+lint.mjs --app frontend/src 0 FAIL, 0 WARN
+inspect.mjs --app (build)   1440 / 768 / 390: 0 FAIL, 0 WARN
+impeccable detect           1280 and 390, signed in: 0 findings
+contrast                    muted/ground 4.81 · muted/panel 5.33 · text 17.85–19.80 · signal 6.10
+```
+
+The earlier `unused-canvas` warning at 1440 px is gone: the task card now fills the centred column with
+real content. The `hero-void` warning belonged to the auth screens and does not apply here.
+
+---
+
 ## Review notes and deviations
 
 - **Rejected AI suggestion:** the `golang-gin-api` skill recommends `html.EscapeString` on inbound
@@ -597,3 +686,4 @@ make web            # frontend dev server on :5173, proxies /api to :8080
 | 2026-11-01 | Task 7: frontend foundation — Vite/TS, typed API client, `AuthContext`, dealt design tokens (`achromatic-ledger`) |
 | 2026-11-01 | Task 8: auth UI — routes, `ProtectedRoute`, login/register forms with server field errors, sign-out header |
 | 2026-11-01 | Task 8 follow-up: product wordmark (mark + name) on the login and register screens, matching the tasks header |
+| 2026-11-01 | Task 9: tasks UI — list, create, inline edit, complete, delete, filters, loading/empty/error states |
